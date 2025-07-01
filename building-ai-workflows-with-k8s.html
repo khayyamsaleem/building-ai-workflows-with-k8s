@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building AI Workflows on DigitalOcean Kubernetes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-okaidia.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+    <style>
+        /* Basic reset and body styles */
+        html, body {
+            height: 100%; /* Ensure html and body take full height */
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light gray-blue background */
+            color: #1e293b; /* Dark slate text */
+            scroll-snap-type: y mandatory; /* Enable vertical scroll snapping */
+            overflow-y: scroll; /* Ensure vertical scrollbar is always present */
+        }
+
+        .slide-deck {
+            width: 100%;
+            height: 100%; /* Deck takes full height of body */
+        }
+
+        .slide {
+            width: 100%;
+            height: 100vh; /* Each slide takes full viewport height */
+            background-color: #ffffff; /* White background for slides */
+            padding: 40px; /* Increased padding */
+            margin-bottom: 0; /* No margin between slides as they snap */
+            box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+            overflow-y: auto; /* Allow internal scrolling if content overflows slide */
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* Center content vertically */
+            align-items: center; /* Center content horizontally */
+            scroll-snap-align: start; /* Snap to the start of each slide */
+            border-bottom: 1px solid #e2e8f0; /* Subtle separator */
+        }
+
+        .slide-content-wrapper {
+            max-width: 900px; /* Max width for content within a slide */
+            width: 100%;
+            padding: 20px;
+            overflow-y: auto; /* Allow scrolling within the content wrapper if needed */
+            max-height: 90vh; /* Ensure content wrapper doesn't exceed viewport too much */
+        }
+
+
+        .slide h1, .slide h2 {
+            color: #0f172a; /* Even darker slate for headings */
+            border-bottom: 2px solid #3b82f6; /* Blue accent border */
+            padding-bottom: 10px;
+            margin-top: 0;
+            text-align: left; /* Align headings to the left */
+            width: 100%; /* Make headings take full width of their container */
+        }
+
+        .slide h1 {
+            font-size: 2.2em; /* Slightly larger for title slide */
+            text-align: center; /* Center the main title */
+            margin-bottom: 15px;
+        }
+
+        .slide .presenter-info {
+            font-size: 1.2em;
+            color: #334155; /* Slightly lighter than main text */
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .slide .presenter-info p {
+            margin: 5px 0;
+        }
+
+        .slide h2 {
+            font-size: 1.8em; /* Slightly larger for slide titles */
+            margin-bottom: 20px;
+        }
+
+        .slide ul, .slide ol {
+            list-style-position: outside;
+            margin-left: 25px;
+            padding-left: 0;
+            margin-bottom: 20px; /* Increased bottom margin */
+            text-align: left; /* Align lists to the left */
+            width: 100%;
+        }
+
+        .slide li {
+            margin-bottom: 10px; /* Increased spacing between list items */
+            line-height: 1.7; /* Improved line height */
+        }
+
+        /* Styles for <pre> code blocks for Prism.js */
+        .slide pre[class*="language-"] {
+            /* The background and text color will be largely handled by the Prism theme (Okaidia) */
+            padding: 20px; /* Original padding */
+            border-radius: 8px; /* Original border-radius */
+            overflow-x: auto; /* Enable horizontal scrolling for wide code */
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace; /* Consistent font */
+            font-size: 0.9em; /* Original font-size */
+            line-height: 1.6; /* Original line-height */
+            width: 100%; /* Make pre take full width */
+            box-sizing: border-box;
+            margin-top: 1em; /* Add some space above code blocks */
+            margin-bottom: 1em; /* Add some space below code blocks */
+            white-space: pre-wrap; /* Allow wrapping for very long lines, but preserve spaces */
+        }
+         /* For diff, we want to preserve leading/trailing whitespace strictly for each line */
+        .slide pre.language-diff {
+            white-space: pre;
+        }
+
+
+        /* Styles for <code> elements WITHIN <pre> blocks - Prism handles this mostly */
+        .slide pre[class*="language-"] > code[class*="language-"] {
+            background-color: transparent !important; /* Ensure Prism theme background shows */
+            color: inherit;
+            padding: 0;
+            border-radius: 0;
+            font-size: inherit;
+            display: block;
+            white-space: inherit; /* Inherit from pre */
+        }
+
+        /* General styles for inline <code> tags (NOT within <pre>) */
+        .slide code:not(pre > code):not([class*="language-"]) {
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            background-color: #e2e8f0; /* Light background for inline code */
+            color: #1e293b; /* Dark text for inline code */
+            padding: 3px 6px; /* Adjusted padding */
+            border-radius: 4px;
+            font-size: 0.85em; /* Slightly smaller for inline */
+        }
+
+
+        .slide .notes {
+            font-style: italic;
+            color: #475569; /* Medium slate for notes */
+            font-size: 0.9em;
+            margin-top: 20px; /* Increased margin */
+            text-align: left;
+            width: 100%;
+        }
+        
+        /* Prism line numbers adjustments */
+        .line-numbers .line-numbers-rows {
+            border-right-color: #555 !important; /* Darker border for line numbers */
+            padding-top: 20px !important; /* Match pre padding */
+            padding-bottom: 20px !important; /* Match pre padding */
+        }
+        .line-numbers-rows > span:before {
+            color: #888 !important; /* Lighter color for line numbers */
+        }
+
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .slide {
+                padding: 20px; /* Adjust padding for smaller screens */
+            }
+            .slide-content-wrapper {
+                padding: 15px;
+                max-height: 95vh;
+            }
+            .slide h1 {
+                font-size: 1.8em;
+            }
+             .slide .presenter-info {
+                font-size: 1em;
+            }
+            .slide h2 {
+                font-size: 1.5em;
+            }
+            .slide pre[class*="language-"] {
+                padding: 15px;
+                font-size: 0.8em;
+            }
+            .line-numbers .line-numbers-rows {
+                padding-top: 15px !important; 
+                padding-bottom: 15px !important;
+            }
+            .slide code:not(pre > code):not([class*="language-"]) {
+                font-size: 0.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-deck">
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h1>Building AI Workflows on DigitalOcean Kubernetes</h1>
+                <div class="presenter-info">
+                    <p>Khayyam Saleem</p>
+                    <p>Senior Engineer - Storage</p>
+                    <p>DigitalOcean</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>What is a DOKS Cluster?</h2>
+                <ul>
+                    <li><strong>DigitalOcean Kubernetes (DOKS):</strong> A managed Kubernetes service.</li>
+                    <li><strong>Simplifies:</strong> Cluster creation, scaling, and ongoing management.</li>
+                    <li><strong>Architecture:</strong>
+                        <ul>
+                            <li><strong>Control Plane:</strong> Fully managed by DigitalOcean. You interact with it via <code>kubectl</code>.</li>
+                            <li><strong>Node Pools:</strong> Groups of worker machines (Droplets) where your applications run.
+                                <ul>
+                                    <li>You can have multiple node pools with different Droplet types (CPU, Memory, GPU optimized).</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Regular DOKS Node Pool</h2>
+                <ul>
+                    <li><strong>Worker Nodes:</strong> Powered by standard DigitalOcean Droplets (general-purpose, CPU-optimized, or memory-optimized).</li>
+                    <li><strong>Purpose:</strong> Ideal for a wide range of containerized applications – web servers, APIs, databases, etc.</li>
+                    <li><strong>Scheduling:</strong> Kubernetes schedules pods based on CPU/memory requests and limits, affinity rules, etc.</li>
+                </ul>
+                <pre class="line-numbers"><code class="language-yaml"># Example: A simple web server pod for a regular node
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-web-app
+spec:
+  containers:
+  - name: web-server-container
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "250m" # 0.25 CPU core
+      limits:
+        memory: "256Mi"
+        cpu: "500m" # 0.5 CPU core
+</code></pre>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>DOKS GPU Node Pool: The Key Differences</h2>
+                <ul>
+                    <li><strong>Specialized Hardware:</strong> Worker nodes are GPU-accelerated Droplets (e.g., featuring NVIDIA GPUs like the H100). (Source 1.1, 4.2)</li>
+                    <li><strong>AI/ML Optimized:</strong> Specifically designed for computationally intensive tasks:
+                        <ul>
+                            <li>Machine learning model training &amp; inference</li>
+                            <li>Scientific computing</li>
+                            <li>Video processing</li>
+                        </ul>
+                    </li>
+                    <li><strong>Managed NVIDIA Drivers:</strong> DigitalOcean installs and manages the necessary NVIDIA drivers on these nodes. (Source 1.1)</li>
+                    <li><strong>NVIDIA Device Plugin for Kubernetes:</strong>
+                        <ul>
+                            <li>You typically need to install this plugin.</li>
+                            <li>It allows Kubernetes to discover and expose GPU resources on the nodes.</li>
+                            <li>Enables scheduling of GPU-enabled containers. (Source 1.1, 3.4)</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Isolating GPU Workloads: Node Taints</h2>
+                <p>To prevent non-GPU workloads from being scheduled on expensive GPU nodes, these nodes are "tainted".</p>
+                <ul>
+                    <li><strong>Taint:</strong> A label applied to a node that repels pods. Pods will not be scheduled on a tainted node unless they explicitly "tolerate" that taint.</li>
+                    <li><strong>Common GPU Taint:</strong> DOKS typically applies a specific taint to GPU node pools. A common pattern is:
+                        <ul>
+                            <li><code>nvidia.com/gpu=present:NoSchedule</code> (or similar, check DOKS documentation for exact taint)</li>
+                            <li><strong><code>NoSchedule</code> effect:</strong> No new pod will be scheduled on the tainted node unless it has a matching toleration. Existing pods are not affected.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <pre class="line-numbers"><code class="language-bash"># Conceptually, how a taint might be applied by DOKS or by an admin:
+# (Usually automatically handled by DOKS for GPU node pools)
+kubectl taint nodes &lt;your-gpu-node-name&gt; nvidia.com/gpu=present:NoSchedule
+</code></pre>
+                <p class="notes"><em>(Based on Kubernetes general practice and Source 1.3, 3.2, 3.3)</em></p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Running Workloads on GPU Nodes: Tolerations &amp; Resource Requests</h2>
+                <p>For a pod to be scheduled on a tainted GPU node and use its GPU, the pod's YAML definition must:</p>
+                <ol>
+                    <li><strong>Tolerate the Taint:</strong> Include a <code>tolerations</code> section matching the taint on the GPU node.</li>
+                    <li><strong>Request GPU Resources:</strong> Specify the number of GPUs it needs via <code>resources.limits</code>.</li>
+                </ol>
+                <pre class="line-numbers"><code class="language-diff">--- a/pod-basic.yaml
++++ b/pod-gpu.yaml
+@@ -4,15 +4,23 @@
+ metadata:
+   name: my-ai-workload
+ spec:
++  tolerations:
++  - key: "nvidia.com/gpu" # Key of the taint
++    operator: "Equal"     # Operator (Exists, Equal)
++    value: "present"      # Value of the taint (if operator is Equal)
++    effect: "NoSchedule"  # Effect of the taint
+   containers:
+   - name: cuda-container
+-    image: ubuntu:latest # Generic image
+-    command: ["sleep", "infinity"]
++    image: nvidia/cuda:12.1.0-runtime-ubuntu22.04 # Example CUDA-enabled image
++    command: ["nvidia-smi"] # Example command to verify GPU access
+     resources:
+       limits:
+-#        memory: "512Mi"
+-#        cpu: "1"
++        nvidia.com/gpu: 1 # Requesting 1 GPU
+       requests: # Optional, but good practice for scheduling
+-#        memory: "256Mi"
+-#        cpu: "0.5"
++        nvidia.com/gpu: 1
+</code></pre>
+                <p class="notes"><em>(Inspired by Source 2.1, 3.4, 5.2. The exact taint key/value might vary based on DOKS configuration.)</em></p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>How Non-GPU Workloads Stay on Non-GPU Nodes</h2>
+                <p>This is the beauty of taints and tolerations:</p>
+                <ul>
+                    <li><strong>No Toleration:</strong> Standard workloads (web servers, APIs not needing GPUs) do <strong>not</strong> include the toleration for the <code>nvidia.com/gpu</code> taint.</li>
+                    <li><strong>Scheduler Avoids Tainted Nodes:</strong> When the Kubernetes scheduler evaluates nodes for these pods:
+                        <ul>
+                            <li>It sees the <code>NoSchedule</code> taint on the GPU nodes.</li>
+                            <li>Since the pods don't have a matching toleration, the scheduler <strong>will not</strong> place them on these GPU nodes.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Result:</strong> Non-GPU workloads are automatically scheduled onto other available nodes in your regular (non-GPU) node pools that don't have this specific taint.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Example: A Non-GPU Workload (Stays Off GPU Nodes)</h2>
+                <p>This pod definition does <strong>not</strong> include tolerations for GPU taints or request <code>nvidia.com/gpu</code> resources. It will be scheduled on any suitable non-GPU node.</p>
+                <pre class="line-numbers"><code class="language-yaml">apiVersion: v1
+kind: Pod
+metadata:
+  name: my-data-processor
+spec:
+  containers:
+  - name: data-processor-container
+    image: python:3.9-slim
+    command: ["python", "-c", "import time; time.sleep(3600)"] # Placeholder
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "500m"
+      limits:
+        memory: "512Mi"
+        cpu: "1"
+</code></pre>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Advanced: Node Affinity/Selectors for Non-GPU Pools</h2>
+                <p>If you have multiple <em>types</em> of non-GPU node pools (e.g., "general-purpose", "cpu-optimized") and want to target a specific one for a non-GPU workload:</p>
+                <ul>
+                    <li><strong>Node Labels:</strong> DOKS node pools can have labels (e.g., <code>pool-type: cpu-optimized</code>).</li>
+                    <li><strong><code>nodeSelector</code> or <code>nodeAffinity</code>:</strong> Use these in your pod spec to express a preference or requirement for nodes with specific labels.</li>
+                </ul>
+                <pre class="line-numbers"><code class="language-diff">--- a/pod-regular.yaml
++++ b/pod-regular-nodeselector.yaml
+@@ -4,6 +4,8 @@
+ metadata:
+   name: my-cpu-intensive-task
+ spec:
++  nodeSelector:
++    doks.digitalocean.com/node-pool: cpu-optimized-pool # Example DOKS label
+   containers:
+   - name: cpu-task-container
+     image: alpine/git # Or any other image
+</code></pre>
+                <p class="notes"><em>This ensures the pod lands on a non-GPU node that also matches your desired pool characteristics, in addition to not being scheduled on GPU nodes due to taints.</em></p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Key Takeaways</h2>
+                <ol>
+                    <li><strong>Heterogeneous Clusters:</strong> DOKS supports node pools with different hardware (CPU, GPU).</li>
+                    <li><strong>GPU Nodes for AI/ML:</strong> Provide NVIDIA hardware, managed drivers. Require the NVIDIA device plugin for Kubernetes to recognize and use GPUs.</li>
+                    <li><strong>Taints for Isolation:</strong> GPU nodes are typically tainted (e.g., <code>nvidia.com/gpu=present:NoSchedule</code>) to reserve them for GPU-specific workloads.</li>
+                    <li><strong>Tolerations &amp; GPU Requests for Access:</strong> Workloads needing GPUs must:
+                        <ul>
+                            <li>Tolerate the GPU node's taint.</li>
+                            <li>Request <code>nvidia.com/gpu</code> resources.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Automatic Segregation:</strong> Standard workloads without these tolerations are naturally kept off GPU nodes by the scheduler.</li>
+                    <li><strong>Finer Control:</strong> <code>nodeSelector</code> and <code>nodeAffinity</code> can further refine placement on specific non-GPU node pools, ensuring workloads land on nodes with appropriate resources even among non-GPU options.</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="slide-content-wrapper">
+                <h2>Q&amp;A</h2>
+                <p style="text-align:center; font-size: 1.2em; margin-top: 30px;">Thank you!</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-diff.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    <script>
+        // Initialize Prism.js (Often not needed as it auto-initializes, but good for explicit control)
+        // Prism.highlightAll(); // Can be called if auto-initialization seems to fail.
+                               // Line numbers plugin requires pre tags to have the 'line-numbers' class.
+    </script>
+</body>
+</html>

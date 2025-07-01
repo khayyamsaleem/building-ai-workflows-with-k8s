@@ -1,0 +1,198 @@
+# shark-image-generator-deployment-self-contained.yaml
+
+# 1. Define the PersistentVolumeClaim for DigitalOcean Block Storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shark-image-output-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce # Standard for block storage
+  resources:
+    requests:
+      storage: 20Gi # Request 20 GiB of storage, adjust as needed
+  # Specify the DigitalOcean Block Storage class.
+  # This is typically 'do-block-storage'. Verify with 'kubectl get sc'
+  storageClassName: do-block-storage
+
+---
+# 2. Define the Deployment for the image generator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shark-image-generator
+  labels:
+    app: shark-image-generator
+spec:
+  replicas: 1 # Run a single instance
+  selector:
+    matchLabels:
+      app: shark-image-generator
+  template:
+    metadata:
+      labels:
+        app: shark-image-generator
+    spec:
+      # Tolerations to allow scheduling on GPU nodes.
+      # Your node has: Taints: nvidia.com/gpu:NoSchedule
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists" # "Exists" will match if the key "nvidia.com/gpu" is present, regardless of value
+        effect: "NoSchedule"
+
+      volumes:
+      - name: image-output-storage # Arbitrary name for the volume definition
+        persistentVolumeClaim:
+          claimName: shark-image-output-pvc # Must match PVC metadata.name
+      - name: app-scripts # emptyDir volume to store the script
+        emptyDir: {}
+
+      containers:
+      - name: image-generator-container
+        # Using a PyTorch base image with Python and CUDA runtime
+        image: pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+        imagePullPolicy: IfNotPresent
+
+        volumeMounts:
+        - name: image-output-storage # Must match volumes.name
+          mountPath: /output         # Mount point inside the container, as used in the Python script
+        - name: app-scripts
+          mountPath: /app            # Mount point for our script
+
+        command:
+          - "/bin/bash"
+          - "-c"
+          - |
+            set -e # Exit immediately if a command exits with a non-zero status.
+            echo "--- Starting Self-Contained Shark Image Generator Setup ---"
+
+            echo "Step 0: Updating package list and installing system dependencies (libgl1, libglib2.0-0)..."
+            # Update package list and install system libraries for OpenCV dependency
+            apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
+            echo "System dependencies installed."
+
+            echo "Step 1: Upgrading pip and Installing Python dependencies..."
+            pip install --no-cache-dir --upgrade pip
+            # Downgraded diffusers to 0.19.3 to align with huggingface_hub<0.20.0 for cached_download import
+            pip install --no-cache-dir \
+                diffusers==0.19.3 \
+                transformers==4.40.1 \
+                accelerate==0.29.3 \
+                Pillow==10.3.0 \
+                invisible-watermark==0.2.0 \
+                safetensors==0.4.3 \
+                huggingface_hub==0.19.4 # Pinned version compatible with diffusers 0.19.3 and old import style
+            echo "Python dependencies installed."
+
+            echo "Step 2: Creating the Python script /app/generate_shark_hf.py..."
+            # Using cat to write the multi-line script to a file
+            cat <<'EOF_SCRIPT' > /app/generate_shark_hf.py
+            import torch
+            from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
+            from PIL import Image
+            import time
+            import random
+            import os
+
+            def main():
+                # --- Configuration ---
+                output_dir = "/output/sharks"  # This path will be mounted from the PVC
+                model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+
+                os.makedirs(output_dir, exist_ok=True)
+
+                if not torch.cuda.is_available():
+                    print("CUDA is not available. This script requires a GPU.")
+                    # Forcing exit if no CUDA, as this is a GPU workload
+                    exit(1) 
+                device = "cuda"
+                print(f"Using device: {device}")
+                torch.cuda.empty_cache() # Clear cache at start
+
+                print(f"Loading model: {model_id}...")
+                try:
+                    scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+                    pipe = StableDiffusionXLPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16,
+                        scheduler=scheduler,
+                        use_safetensors=True,
+                        variant="fp16"
+                    )
+                    pipe = pipe.to(device)
+                    # Optional: Model compilation for potential speedup (can increase startup time)
+                    # pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
+                    print("Model loaded successfully.")
+                except Exception as e:
+                    print(f"Error loading model: {e}")
+                    exit(1) # Exit if model loading fails
+
+                poses = [
+                    "surfing a giant wave, vibrant sunset background",
+                    "wearing a chef's hat, comically flipping a tiny pancake",
+                    "reading a large book with glasses on, looking studious",
+                    "wearing oversized sunglasses and a Hawaiian shirt, on vacation",
+                    "juggling glowing jellyfish, underwater scene",
+                    "doing yoga on a paddleboard, looking serene",
+                    "as a detective with a magnifying glass, investigating a missing fish",
+                    "playing an electric guitar on a stage made of coral",
+                    "piloting a small submarine, exploring a treasure chest",
+                    "sipping a coconut drink on a tropical beach"
+                ]
+                
+                image_count = 0
+                while True:
+                    image_count += 1
+                    selected_pose = random.choice(poses)
+                    prompt = f"A vibrant, high-quality cartoon illustration of a friendly shark {selected_pose}. Funny, Pixar style, detailed, colorful, 8k."
+                    negative_prompt = "blurry, low quality, ugly, deformed, watermark, text, signature, monochrome, grayscale, human, artifacts, noise, poorly drawn"
+
+                    print(f"\n--- Generating Image {image_count} ---")
+                    print(f"Prompt: {prompt}")
+
+                    try:
+                        image = pipe(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            num_inference_steps=25, # Reduced for faster iteration, can increase for quality
+                            guidance_scale=7.0,
+                            width=1024,
+                            height=1024
+                        ).images[0]
+
+                        timestamp = time.strftime("%Y%m%d-%H%M%S")
+                        filename = f"shark_pose_{image_count}_{timestamp}.png"
+                        filepath = os.path.join(output_dir, filename)
+                        image.save(filepath)
+                        print(f"Image saved to {filepath}")
+
+                    except Exception as e:
+                        print(f"Error during image generation or saving: {e}")
+                        if "out of memory" in str(e).lower():
+                            print("Attempting to clear CUDA cache due to OOM...")
+                            torch.cuda.empty_cache()
+                    
+                    print(f"--- Loop complete. Sleeping for 30 seconds. ---")
+                    time.sleep(30)
+
+            if __name__ == "__main__":
+                main()
+            EOF_SCRIPT
+            echo "Python script created."
+
+            echo "Step 3: Executing the Python script..."
+            # Ensure the script is executable (though python interpreter doesn't strictly need it)
+            chmod +x /app/generate_shark_hf.py
+            python /app/generate_shark_hf.py
+
+        resources:
+          limits:
+            nvidia.com/gpu: 1 # Request 1 GPU
+            memory: "24Gi"    # L40S has 46GB, SDXL can be memory intensive.
+            cpu: "4"          # Request 4 CPU cores
+          requests:
+            nvidia.com/gpu: 1
+            memory: "16Gi"    # Initial memory request
+            cpu: "2"          # Initial CPU request
+        
+      # terminationGracePeriodSeconds: 60 # Optional: give script time to finish current image on SIGTERM
