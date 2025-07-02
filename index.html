@@ -119,7 +119,7 @@
         .shark-icon {
             width: 40px;
             height: 40px;
-            fill: currentColor;
+            object-fit: contain;
         }
 
         .slide-deck {
@@ -541,12 +541,7 @@ spec:
                 <div style="text-align: center; margin-top: 50px;">
                     <p style="font-size: 1.2em; margin-bottom: 30px;">Check out this example YAML configuration:</p>
                     <a href="https://github.com/khayyamsaleem/building-ai-workflows-with-k8s/blob/main/sharkgen.yaml" class="shark-link" target="_blank" rel="noopener noreferrer">
-                        <svg class="shark-icon" viewBox="0 0 100 60">
-                            <path d="M10 30 Q5 20 15 25 Q25 15 35 25 L50 30 Q60 25 70 30 Q75 35 85 30 Q90 35 95 30 L90 35 Q85 40 75 35 Q65 45 55 35 L40 30 Q30 35 20 30 Q15 35 10 30 Z" fill="currentColor"/>
-                            <circle cx="25" cy="28" r="2" fill="white"/>
-                            <path d="M35 25 L45 20 L40 30 Z" fill="currentColor"/>
-                            <path d="M55 35 L65 30 L60 40 Z" fill="currentColor"/>
-                        </svg>
+                        <img src="https://doimages.nyc3.cdn.digitaloceanspaces.com/sammy-jetpack.png" alt="Sammy the Shark" class="shark-icon">
                     </a>
                     <p style="font-size: 0.9em; color: #64748b; margin-top: 20px;">
                         See a real-world example of GPU workload configuration
